@@ -37,6 +37,11 @@ const jwt=require("jsonwebtoken");
 // );
 //cloudinary connection
 const {userSocketIds}=require("./utils/socket")
+const allowedOrigins = [
+    "http://localhost:3000",
+    "https://chat-app-full-stack-project-using-mern-and-socket.vercel.app"
+];
+
 dotenv.config();
 const PORT = process.env.PORT || 4000;
 
@@ -50,11 +55,19 @@ createMessagesInChat("666f3df7f34329a248a4e8cd", 0);
 
 app.use(express.json());
 app.use(cookieParser());
+
 app.use(cors({ 
-    origin: "http://localhost:3000",
-    methods:["GET","PUT","POST","DELETE"], 
+    origin: (origin, callback) => {
+        if (allowedOrigins.includes(origin) || !origin) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    }, 
+    methods: ["GET", "PUT", "POST", "DELETE"], 
     credentials: true 
 }));
+
 
 app.use("/api/v1/user", userRoutes);
 app.use("/api/v1/chat", chatRoutes);
@@ -66,9 +79,16 @@ app.get("/", (req, res) => {
 
 const server = http.createServer(app);
 const io = new Server(server, {
-    cors: { 
-        origin: "http://localhost:3000", 
-        credentials: true 
+    cors: {
+        origin: (origin, callback) => {
+            if (allowedOrigins.includes(origin) || !origin) {
+                callback(null, true);
+            } else {
+                callback(new Error('Not allowed by CORS'));
+            }
+        },
+        methods: ["GET", "POST"],
+        credentials: true
     }
 });
 
