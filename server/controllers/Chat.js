@@ -44,8 +44,8 @@ exports.groupChat = async (req, res) => {
 
         await chat.save();
 
-        emitEvent(req, ALERT, memberIds, `Welcome to ${Name} group`);
-        emitEvent(req, REFETCH_CHATS, members);
+        // emitEvent(req, ALERT, memberIds, `Welcome to ${Name} group`);
+        // emitEvent(req, REFETCH_CHATS, members);
 
         res.status(201).json({
             success: true,
@@ -116,7 +116,7 @@ exports.getMyGroups = async (req, res) => {
         const user = req.user; // Assuming req.user is set by an authentication middleware
 
         // Find group chats where the user is a member and also the creator
-        const groups = await Chat.find({ members: user.id, groupChat: true, creator: user.id })
+        const groups = await Chat.find({ members: user.id, groupChat: true })
             .populate('members', 'userName image');
 
         const updatedGroups = groups.map(({ _id, Name, groupChat, members }) => {
@@ -276,11 +276,11 @@ exports.removeMembers = async (req, res) => {
 
         const removedMembersNames = removedMembers.map(member => member.userName).join(",");
 
-        emitEvent(req,
-            ALERT,
-            chat.members,
-            `${removedMembersNames} has been removed from the group by ${req.user.userName}`
-        );
+        // emitEvent(req,
+        //     ALERT,
+        //     chat.members,
+        //     `${removedMembersNames} has been removed from the group by ${req.user.userName}`
+        // );
     
         res.status(201).json({
             success: true,
@@ -514,12 +514,12 @@ exports.sendAttachment = async (req, res) => {
         const message = await Message.create(messageData);
 console.log("mesage",message);
        
-        emitEvent(req, NEW_MESSAGE, chat.members, {
-            message: messageForRealTime,
-            ChatId,
-          });
+        // emitEvent(req, NEW_MESSAGE, chat.members, {
+        //     message: messageForRealTime,
+        //     ChatId,
+        //   });
         
-          emitEvent(req, NEW_MESSAGE_ALERT, chat.members, { ChatId });
+        //   emitEvent(req, NEW_MESSAGE_ALERT, chat.members, { ChatId });
 
         res.status(200).json({
             success: true,
@@ -534,7 +534,6 @@ console.log("mesage",message);
         });
     }
 };
-
 exports.getChatDetails = async (req, res) => {
     try {
         const { id: chatId } = req.params;
@@ -546,7 +545,7 @@ exports.getChatDetails = async (req, res) => {
                 message: 'Chat ID is required',
             });
         }
-        console.log("chat id",chatId);
+
         let chat;
 
         if (req.query.populate) {
@@ -557,7 +556,7 @@ exports.getChatDetails = async (req, res) => {
             // Find the chat by ID without populating members
             chat = await Chat.findById(chatId);
         }
-        console.log("chat",chat);
+
         // Check if chat exists
         if (!chat) {
             return res.status(404).json({
@@ -569,12 +568,20 @@ exports.getChatDetails = async (req, res) => {
         let responseChat = chat.toObject();
 
         if (req.query.populate) {
-            // Modify members array to include image URLs
-            responseChat.members = chat.members.map(({ _id, userName, image }) => ({
-                _id,
-                userName,
-                image: image.url,
-            }));
+            // Fetch user details for each member in the chat
+            const memberDetails = await Promise.all(
+                chat.members.map(async (member) => {
+                    const user = await User.findById(member._id, 'userName image');
+                    return {
+                        _id: user._id,
+                        userName: user.userName,
+                        image: user.image.url, // Assuming image is stored as an object with a `url` property
+                    };
+                })
+            );
+
+            // Assign the fetched member details to the response
+            responseChat.members = memberDetails;
         }
 
         // Return the chat details with modified members if populated

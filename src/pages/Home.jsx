@@ -7,7 +7,6 @@ import { useState,useEffect } from 'react'
 import { useSelector } from 'react-redux'
 import { setMobileScreen } from '../slices/other';
 import CustomDrawer from '../Utils/customDrower';
-
 const Home = () => {
   const dispatch = useDispatch();
   const isMobileScreen = useSelector((state) => state.other.isMobileScreen);
@@ -34,19 +33,19 @@ const Home = () => {
   };
 
   return (
-    <div style={{ display: 'flex', width: '100%' }}>
+    <div style={{ display: 'flex', width: '100%', height: '100vh' }}>
       {!isMobile && (
-        <div style={{ flex: 1 }} >
+        <div style={{ flex: 1, overflowY: 'auto', height: '100%' }}>
           <Chatlist />
         </div>
       )}
 
-      <div style={{ flex: 2 }}  >
+      <div style={{ flex: 2, overflowY: 'auto', height: '100%' }}>
         <Chat />
       </div>
 
       {!isMobile && (
-        <div style={{ flex: 1 }} className=' '>
+        <div style={{ flex: 1, overflowY: 'auto', height: '100%' }}>
           <Profile />
         </div>
       )}

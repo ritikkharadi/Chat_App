@@ -44,9 +44,9 @@ const Chat = () => {
   const [user, setUser] = useState(null);
   const [fileMenuAnchor, setFileMenuAnchor] = useState(null);
   const [userStatus, setUserStatus] = useState({});
-const [onlineUsers, setOnlineUsers] = useState([]);
+  const [onlineUsers, setOnlineUsers] = useState([]);
 
-  // Fetch user from localStorage on component mount
+  // Initialize user from localStorage
   useEffect(() => {
     const storedUser = JSON.parse(localStorage.getItem('user'));
     if (storedUser) {
@@ -54,17 +54,12 @@ const [onlineUsers, setOnlineUsers] = useState([]);
     }
   }, []);
 
-  
   // Fetch chat details
   useEffect(() => {
     if (token && chatId) {
       dispatch(getChatDetails(chatId, true))
-        .then(chat => {
-          setChatDetails(chat);
-        })
-        .catch(error => {
-          console.error('Failed to fetch chat details:', error);
-        });
+        .then(chat => setChatDetails(chat))
+        .catch(error => console.error('Failed to fetch chat details:', error));
     }
   }, [dispatch, token, chatId]);
 
@@ -72,12 +67,8 @@ const [onlineUsers, setOnlineUsers] = useState([]);
   useEffect(() => {
     if (token && chatId) {
       dispatch(getMessages(chatId, page))
-        .then(oldMessages => {
-          setOldMessageChunks(prev => [...prev, ...oldMessages.messages]);
-        })
-        .catch(error => {
-          console.error('Failed to fetch messages:', error);
-        });
+        .then(oldMessages => setOldMessageChunks(prev => [...prev, ...oldMessages.messages]))
+        .catch(error => console.error('Failed to fetch messages:', error));
     }
   }, [dispatch, token, chatId, page]);
 
@@ -100,32 +91,66 @@ const [onlineUsers, setOnlineUsers] = useState([]);
     e.preventDefault();
     if (!message.trim()) return;
 
-    socket.emit('NEW_MESSAGE', { chatId, content: message, token }, (response) => {
+    const newMessage = { chatId, content: message, token };
+
+    socket.emit('NEW_MESSAGE', newMessage, (response) => {
       if (response && response.messageForRealTime) {
         setMessages(prevMessages => [...prevMessages, response.messageForRealTime]);
       } else {
         console.error("Failed to send message:", response);
       }
     });
+
     setMessage("");
   };
-  
+
   const handleFileOpen = (e) => {
     dispatch(setIsFileMenu(true));
     setFileMenuAnchor(e.currentTarget);
   };
 
-
-  // Listen for new messages from the server
+  // Handle socket events
   useEffect(() => {
-    const handleMessageSent = (messageForRealTime) => {
+    if (!socket) return;
+
+    const handleMessageReceived = (messageForRealTime) => {
       setMessages(prevMessages => [...prevMessages, messageForRealTime]);
     };
 
-    socket.on('RECEIVE_MESSAGE', handleMessageSent);
+    const handleUserStatusChange = (data) => {
+      if (Array.isArray(data)) {
+        setOnlineUsers(data);
+        const userStatusMap = data.reduce((acc, userId) => {
+          acc[userId] = true;
+          return acc;
+        }, {});
+        setUserStatus(userStatusMap);
+      } else {
+        setUserStatus(prevStatus => ({ ...prevStatus, [data.userId]: true }));
+        setOnlineUsers(prevOnlineUsers => {
+          if (!prevOnlineUsers.includes(data.userId)) {
+            return [...prevOnlineUsers, data.userId];
+          }
+          return prevOnlineUsers;
+        });
+      }
+    };
+
+    const handleUserOffline = (data) => {
+      setUserStatus(prevStatus => ({ ...prevStatus, [data.userId]: false }));
+      setOnlineUsers(prevOnlineUsers => prevOnlineUsers.filter(id => id !== data.userId));
+    };
+
+    socket.on('RECEIVE_MESSAGE', handleMessageReceived);
+    socket.on('USER_ONLINE', handleUserStatusChange);
+    socket.on('USER_OFFLINE', handleUserOffline);
+    socket.on('ONLINE_USERS', handleUserStatusChange);
 
     return () => {
-      socket.off('RECEIVE_MESSAGE', handleMessageSent);
+      socket.off('RECEIVE_MESSAGE', handleMessageReceived);
+      socket.off('USER_ONLINE', handleUserStatusChange);
+      socket.off('USER_OFFLINE', handleUserOffline);
+      socket.off('ONLINE_USERS', handleUserStatusChange);
     };
   }, [socket]);
 
@@ -201,29 +226,6 @@ const [onlineUsers, setOnlineUsers] = useState([]);
   );
 
   useEffect(() => {
-    const handleUserOnline = (data) => {
-        console.log('User Online:', data.userId); // Debug log
-        setUserStatus(prevStatus => ({ ...prevStatus, [data.userId]: true }));
-        setOnlineUsers(prevOnlineUsers => [...prevOnlineUsers, data.userId]);
-    };
-
-    const handleUserOffline = (data) => {
-        console.log('User Offline:', data.userId); // Debug log
-        setUserStatus(prevStatus => ({ ...prevStatus, [data.userId]: false }));
-        setOnlineUsers(prevOnlineUsers => prevOnlineUsers.filter(id => id !== data.userId));
-    };
-
-    socket.on('USER_ONLINE', handleUserOnline);
-    socket.on('USER_OFFLINE', handleUserOffline);
-
-    return () => {
-        socket.off('USER_ONLINE', handleUserOnline);
-        socket.off('USER_OFFLINE', handleUserOffline);
-    };
-}, [socket]);
-  // Register socket listeners
-  console.log("onlineUsers",onlineUsers);
-  useEffect(() => {
     socket.on('NEW_MESSAGE', newMessagesListener);
     socket.on('START_TYPING', startTypingListener);
     socket.on('STOP_TYPING', stopTypingListener);
@@ -240,9 +242,11 @@ const [onlineUsers, setOnlineUsers] = useState([]);
   const allMessages = [...oldMessageChunks, ...messages];
 
   if (!chatDetails) {
-    return <div>
-      <img src={img} className=' h-screen'/>
-    </div>;
+    return (
+      <div>
+        <img src={img} className='h-screen' alt="Loading" />
+      </div>
+    );
   }
 
   const getRandomColor = () => {
@@ -256,20 +260,25 @@ const [onlineUsers, setOnlineUsers] = useState([]);
       'text-indigo-500',
     ];
     return colors[Math.floor(Math.random() * colors.length)];
-    
   };
+
   return (
     <div>
     {chatDetails ? (
       <>
-    <div className="flex flex-col h-screen bg-pure-greys-5">
+    <div className="flex flex-col h-screen">
  
     <div className="bg-gray-800  p-3 flex justify-between items-center bg-white  border-b-2 border-pure-greys-25">
           <h2 className="text-lg text-black font-semibold">{chatDetails.Name}</h2>
           {IamTyping && <div className=' text-black'> i am typing</div>}
-          <div className="text-green-500">
-          {onlineUsers.includes(user._id) ? 'Online' : 'Offline'}
-        </div>
+          {!chatDetails.groupChat && chatDetails.members.length === 2 && (
+    <div className="text-green-500">
+        {chatDetails.members.filter(memberId => memberId !== user._id).some(memberId => onlineUsers.includes(memberId))
+            ? <div className=' text-green-400'>online</div>
+            : <div className='  text-red-900'>offline </div>
+        }
+    </div>
+)}
          
         </div>
 
@@ -291,22 +300,15 @@ const [onlineUsers, setOnlineUsers] = useState([]);
                 </div>
               ) : (
                 // Message sent by another user
-                <div className={`ml-3 bg-gray-100 rounded-lg border border-gray-200 p-3 max-w-xs flex`}>
-               <div className="flex-shrink-0">
-              {/* <img
-                src={msg.sender.image} // Replace with the actual path to the profile image
-                alt={`${msg.sender.userName}'s Profile`}
-              className="h-10 w-10 rounded-full"
-    /> */}
-                </div>
-  <div className="ml-3 flex flex-col">
-    <p className="font-semibold">{msg.sender.userName}</p>
-    <p className="text-gray-800">{msg.content}</p>
-    <div className="flex justify-between mt-2">
-      <span className="text-xs text-gray-400">{new Date(msg.createdAt).toLocaleTimeString()}</span>
+                <div className="ml-3 bg-gray-100 rounded-lg border border-gray-200 p-3 max-w-xs flex shadow-lg">
+    <div className="ml-3 flex flex-col">
+      <p className={`font-semibold text-blue-500 ${chatDetails.groupChat ? getRandomColor() : ''}`}>{msg.sender.userName}</p>
+      <p className="text-gray-800">{msg.content}</p>
+      <div className="flex justify-between mt-2">
+        <span className="text-xs text-gray-500">{new Date(msg.createdAt).toLocaleTimeString()}</span>
+      </div>
     </div>
   </div>
-</div>
               )}
             </div>
           ))}
@@ -325,7 +327,7 @@ const [onlineUsers, setOnlineUsers] = useState([]);
             value={message}
             onChange={messageOnChange}
             placeholder="Type a message..."
-            className="w-full px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 rounded-lg border-richblack-50 border-2 focus:outline-none focus:border-none focus:ring-2 focus:ring-blue-500"
           />
         </form>
         <button

@@ -45,12 +45,12 @@ const EmailVerify = React.lazy(() => import('./pages/verifyEmail'));
     }
   }, [dispatch, token, isUser]);
 
-  useEffect(() => {
-    if (isUser) {
-      // navigate('/home');
-      console.log("Navigating to /home");
-    }
-  }, [isUser, navigate]);
+  // useEffect(() => {
+  //   if (isUser) {
+  //     // navigate('/home');
+  //     console.log("Navigating to /home");
+  //   }
+  // }, [isUser, navigate]);
 
   return (
     <div className=''>

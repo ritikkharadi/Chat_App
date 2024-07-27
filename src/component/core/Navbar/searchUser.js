@@ -17,7 +17,7 @@ const SearchUser = () => {
   const [results, setResults] = useState([]);
   const dispatch = useDispatch();
   const token = useSelector((state) => state.auth.token);
-  const socket = useSocket();
+
   const fetchSearchedUsers = async () => {
     try {
       const response = await dispatch(Search(searchTerm.trim())); // Call the Search function

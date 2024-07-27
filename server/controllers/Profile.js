@@ -1,4 +1,5 @@
 const User = require("../model/User");
+
 exports.getUserProfile = async (req, res) => {
     try {
       const userId = req.user.id;

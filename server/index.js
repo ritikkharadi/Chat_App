@@ -52,7 +52,7 @@ app.use(express.json());
 app.use(cookieParser());
 app.use(cors({ 
     origin: "http://localhost:3000",
-    // methods:["GET","PUT","POST","DELETE"], 
+    methods:["GET","PUT","POST","DELETE"], 
     credentials: true 
 }));
 
@@ -65,7 +65,6 @@ app.get("/", (req, res) => {
 });
 
 const server = http.createServer(app);
-
 const io = new Server(server, {
     cors: { 
         origin: "http://localhost:3000", 
@@ -75,67 +74,62 @@ const io = new Server(server, {
 
 
 
-const getSockets = (users = []) => {
-    const sockets = users.map(user => userSocketIds.get(user._id.toString()));
-    return sockets;
-};
-const users = {}; // Store user IDs and their socket IDs
- // Store user IDs and their socket IDs
+const users = {};
 
-io.on("connection", (socket) => {
-    console.log("a user connected", socket.id);
+io.on('connection', (socket) => {
+  //  console.log('A user connected', socket.id);
 
     // Register a user
-    socket.on("REGISTER_USER", (userId) => {
+    socket.on('REGISTER_USER', (userId) => {
+      //  console.log(`Registering user ${userId} with socket ID ${socket.id}`);
+
         userSocketIds.set(userId, socket.id);
-        console.log(`User ${userId} registered with socket ID ${socket.id}`);
+        users[userId] = socket.id;
+        console.log("users",users);
 
         // Emit USER_ONLINE event
-        users[userId] = socket.id;
-        io.emit("USER_ONLINE", { userId });
-        io.emit("ONLINE_USERS", Object.keys(users)); // Broadcast online users
-    });
-
-    // Handle user coming online
-    socket.on("USER_ONLINE", (userId) => {
-        users[userId] = socket.id;
-        io.emit("USER_ONLINE", { userId });
-        io.emit("ONLINE_USERS", Object.keys(users)); // Broadcast online users
+        io.emit('USER_ONLINE', { userId });
+        io.emit('ONLINE_USERS', Object.keys(users)); // Broadcast online users
     });
 
     // Handle user going offline
-    socket.on("USER_OFFLINE", (userId) => {
-        delete users[userId];
-        io.emit("USER_OFFLINE", { userId });
-        io.emit("ONLINE_USERS", Object.keys(users)); // Broadcast online users
+    socket.on('USER_OFFLINE', (userId) => {
+        if (users[userId]) {
+            console.log(`User ${userId} went offline`);
+            delete users[userId];
+            userSocketIds.delete(userId);
+
+            io.emit('USER_OFFLINE', { userId });
+            io.emit('ONLINE_USERS', Object.keys(users)); // Broadcast online users
+        }
     });
 
     // Handle sending a friend request
-    socket.on("SEND_FRIEND_REQUEST", async ({ receiverId, token }) => {
+    socket.on('SEND_FRIEND_REQUEST', async ({ receiverId, token }) => {
         try {
             const decoded = jwt.verify(token, process.env.JWT_SECRET);
             const senderId = decoded.id;
 
             if (senderId === receiverId) {
-                socket.emit("ERROR", { message: "You cannot send a friend request to yourself." });
+                socket.emit('ERROR', { message: 'You cannot send a friend request to yourself.' });
                 return;
             }
 
             const receiver = await User.findById(receiverId);
             if (!receiver) {
-                socket.emit("ERROR", { message: "Receiver user not found." });
+                socket.emit('ERROR', { message: 'Receiver user not found.' });
                 return;
             }
 
             const existingRequest = await FriendRequest.findOne({
                 $or: [
                     { sender: senderId, receiver: receiverId },
-                    { sender: receiverId, receiver: senderId }
-                ]
+                    { sender: receiverId, receiver: senderId },
+                ],
             });
 
             if (existingRequest) {
-                socket.emit("ERROR", { message: "Friend request already sent or pending." });
+                socket.emit('ERROR', { message: 'Friend request already sent or pending.' });
                 return;
             }
 
@@ -148,34 +142,34 @@ io.on("connection", (socket) => {
 
             const receiverSocketId = userSocketIds.get(receiverId.toString());
             if (receiverSocketId) {
-                io.to(receiverSocketId).emit("RECEIVE_FRIEND_REQUEST", newFriendRequest);
+                io.to(receiverSocketId).emit('RECEIVE_FRIEND_REQUEST', newFriendRequest);
             }
 
-            socket.emit("FRIEND_REQUEST_SENT", newFriendRequest);
+            socket.emit('FRIEND_REQUEST_SENT', newFriendRequest);
         } catch (error) {
-            console.error("Error sending friend request:", error);
-            socket.emit("ERROR", { message: "Failed to send friend request. Please try again." });
+            console.error('Error sending friend request:', error);
+            socket.emit('ERROR', { message: 'Failed to send friend request. Please try again.' });
         }
     });
 
     // Handle sending a new message
-    socket.on("NEW_MESSAGE", async ({ chatId, content, token }) => {
+    socket.on('NEW_MESSAGE', async ({ chatId, content, token }, callback) => {
         try {
             const decoded = jwt.verify(token, process.env.JWT_SECRET);
             const senderId = decoded.id;
-
-            const chat = await Chat.findById(chatId).populate("members", "userName image");
+    
+            const chat = await Chat.findById(chatId).populate('members', 'userName image');
             if (!chat) {
-                socket.emit("ERROR", { message: "Chat not found" });
+                callback({ success: false, message: 'Chat not found' });
                 return;
             }
-
-            const sender = await User.findById(senderId).select("userName");
+    
+            const sender = await User.findById(senderId).select('userName');
             if (!sender) {
-                socket.emit("ERROR", { message: "Sender not found" });
+                callback({ success: false, message: 'Sender not found' });
                 return;
             }
-
+    
             const messageForRealTime = {
                 content,
                 _id: uuidv4(),
@@ -186,49 +180,51 @@ io.on("connection", (socket) => {
                 chat: chatId,
                 createdAt: new Date().toISOString(),
             };
-
+    
             const messageForDB = {
                 content,
                 sender: senderId,
                 chat: chatId,
                 createdAt: new Date(),
             };
-
+    
             const dbMessage = new Message(messageForDB);
             await dbMessage.save();
-
+    
             chat.members.forEach((member) => {
                 const memberSocketId = userSocketIds.get(member._id.toString());
                 if (memberSocketId) {
-                    io.to(memberSocketId).emit("RECEIVE_MESSAGE", messageForRealTime);
+                    io.to(memberSocketId).emit('RECEIVE_MESSAGE', messageForRealTime);
                 }
             });
-
-            socket.emit("MESSAGE_SENT", messageForRealTime);
+    
+            callback({ success: true, messageForRealTime });
         } catch (error) {
-            console.error("Error handling NEW_MESSAGE event:", error);
-            socket.emit("ERROR", { message: "Failed to send message" });
+            console.error('Error handling NEW_MESSAGE event:', error);
+            callback({ success: false, message: 'Failed to send message' });
         }
     });
 
     // Handle start typing
-    socket.on("START_TYPING", (data) => {
+    socket.on('START_TYPING', (data) => {
         socket.broadcast.to(data.chatId).emit('USER_TYPING', { userId: data.userId, chatId: data.chatId });
     });
 
     // Handle stop typing
-    socket.on("STOP_TYPING", (data) => {
+    socket.on('STOP_TYPING', (data) => {
         socket.broadcast.to(data.chatId).emit('USER_STOP_TYPING', { userId: data.userId, chatId: data.chatId });
     });
 
     // Handle disconnection
-    socket.on("disconnect", () => {
-        console.log("user disconnected");
-        const userId = Object.keys(users).find(key => users[key] === socket.id);
+    socket.on('disconnect', () => {
+        console.log('User disconnected', socket.id);
+        const userId = Object.keys(users).find((key) => users[key] === socket.id);
         if (userId) {
+            console.log(`User ${userId} removed from online list`);
             delete users[userId];
-            io.emit("USER_OFFLINE", { userId });
-            io.emit("ONLINE_USERS", Object.keys(users)); // Broadcast online users
+            userSocketIds.delete(userId);
+            io.emit('USER_OFFLINE', { userId });
+            io.emit('ONLINE_USERS', Object.keys(users)); // Broadcast updated online users
         }
     });
 });

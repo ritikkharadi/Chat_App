@@ -165,3 +165,39 @@ import { setChats } from "../../slices/chatSlice";
       toast.dismiss(toastId);
     }
   }
+
+  export function getMyGroups(token) {
+    return async (dispatch) => {
+      const toastId = toast.loading('Fetching groups...');
+      dispatch(setLoading(true));
+  
+      try {
+        const response = await apiConnector(
+          'GET',
+          GET_MY_GROUPS_API,
+          null,
+          {
+            Authorization: `Bearer ${token}`,
+          }
+        );
+  
+        console.log('GET_GROUPS API RESPONSE:', response);
+  
+        if (!response.data.success) {
+          throw new Error(response.data.message);
+        }
+  
+        const { groups } = response.data;
+  
+        // dispatch(setGroups(groups));
+        return groups;
+      } catch (error) {
+        console.error('GET_GROUPS API ERROR:', error);
+        toast.error('Failed to fetch groups');
+        // dispatch(setError('Failed to fetch groups'));
+      } finally {
+        toast.dismiss(toastId);
+        dispatch(setLoading(false));
+      }
+    };
+  }

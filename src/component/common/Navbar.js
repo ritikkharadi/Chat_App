@@ -9,12 +9,15 @@ import { RxHamburgerMenu } from "react-icons/rx";
 import {logout} from "../../services/operation/authAPI";
 import { useDispatch } from "react-redux"
 import {  useNavigate } from "react-router-dom"
+import { IoIosChatbubbles } from "react-icons/io";
+import { useSocket } from "../../socket";
 import ConfirmationModal from '../../Utils/confirmationModal';
 import{setMobileScreen,isMobileScreen} from "../../slices/other"
+
 // Lazy load components
 const Search = React.lazy(() => import('../core/Navbar/Search'));
 const Notification = React.lazy(() => import('../core/Navbar/Notification'));
-const AddNewGroup = React.lazy(() => import('../core/Navbar/AddNewGroup'));
+const MyGroupsComponent = React.lazy(() => import('../core/Navbar/AddNewGroup'));
 
 const Navbar = () => {
   const dispatch = useDispatch();
@@ -23,8 +26,11 @@ const Navbar = () => {
   const [isSearch, setIsSearch] = useState(false);
   const [isNotification, setIsNotification] = useState(false);
   const [isNewGroup, setIsNewGroup] = useState(false);
-  const [isModalOpen, setIsModalOpen] = useState(false); // State to manage modal visibility
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
+  const socket = useSocket();
+  const userId = localStorage.getItem('userId');
 
   useEffect(() => {
     const handleResize = () => {
@@ -36,6 +42,21 @@ const Navbar = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      const userId = localStorage.getItem("userId");
+      if (userId) {
+        socket.emit("USER_OFFLINE", userId);
+      }
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [socket]);
+
   const searchHandler = () => {
     setIsSearch(prev => !prev);
   };
@@ -44,16 +65,20 @@ const Navbar = () => {
     console.log("Add button clicked");
   };
 
-  const manageHandler = () => {
-    setIsNewGroup(prev => !prev);
-  };
-
   const notificationHandler = () => {
     setIsNotification(prev => !prev);
   };
 
   const closeNotificationHandler = () => {
     setIsNotification(false);
+  };
+
+  const groupModalHandler = () => {
+    setIsGroupModalOpen(prev => !prev);
+  };
+
+  const closeGroupModalHandler = () => {
+    setIsGroupModalOpen(false);
   };
 
   const logoutHandler = () => {
@@ -80,6 +105,13 @@ const Navbar = () => {
     btn2Text: "Yes",
     btn1Handler: () => setIsModalOpen(false),
     btn2Handler: () => {
+      if (userId) {
+        // Emit USER_OFFLINE event
+        socket.emit('USER_OFFLINE', userId);
+        // Perform other logout operations
+        localStorage.removeItem('userId'); // Clear userId from localStorage
+        // Redirect to login page or perform other logout actions
+      }
       dispatch(logout(navigate));
       setIsModalOpen(false);
     }
@@ -90,13 +122,17 @@ const Navbar = () => {
       <div className='flex h-14 items-center justify-center border-b-[1px] bg-specialBlue-100 border-b-richblack-700'>
         <div className='flex w-11/12 max-w-maxContent items-center justify-between border-b-richblack-700'>
           <Link to="/">
-            <p className='text-pure-greys-25'>ChatUp</p>
+            <div className='flex flex-row'>
+              <IoIosChatbubbles className='text-white text-2xl mt-1' />
+              <p className='text-richblack-5 text-2xl font-semibold ml-2 text-'>Chatup</p>
+            </div>
           </Link>
+
           <nav className='mx-6'>
-            <ul className='hidden md:flex gap-x-10 text-richblack-25'>
-              <button onClick={openSearchModal}><IoSearch/></button>
+            <ul className='hidden md:flex gap-x-14 text-richblack-5 text-lg'>
+              <button onClick={openSearchModal}><IoSearch /></button>
               <button onClick={addHandler}><FaPlus /></button>
-              <button onClick={manageHandler}><RiTeamFill /></button>
+              <button onClick={groupModalHandler}><RiTeamFill /></button>
               <button onClick={notificationHandler}><FaBell /></button>
               <button onClick={logoutHandler}><MdLogout /></button>
             </ul>
@@ -108,24 +144,31 @@ const Navbar = () => {
           </nav>
         </div>
       </div>
+
       {isSearch && (
         <Suspense fallback={<div>Loading...</div>}>
           <Search />
         </Suspense>
       )}
+
       {isNotification && (
         <div className="fixed inset-0 z-[1000] grid place-items-center overflow-auto bg-white bg-opacity-10 backdrop-blur-sm" onClick={closeNotificationHandler}>
-         <Suspense fallback={<div>Loading...</div>}>
-          <Notification />
-        </Suspense>
+          <Suspense fallback={<div>Loading...</div>}>
+            <Notification />
+          </Suspense>
         </div>
       )}
-      {isNewGroup && (
-        <Suspense fallback={<div>Loading...</div>}>
-          <AddNewGroup />
-        </Suspense>
+
+      {isGroupModalOpen && (
+         <div className="fixed inset-0 z-[1000] grid place-items-center overflow-auto bg-white bg-opacity-10 backdrop-blur-sm" onClick={closeGroupModalHandler}>
+         <Suspense fallback={<div>Loading...</div>}>
+         <MyGroupsComponent />
+         </Suspense>
+       </div>
       )}
-      {isModalOpen && <ConfirmationModal modalData={modalData} />}
+
+      {isModalOpen && <ConfirmationModal modalData={modalData} onClick={closeNotificationHandler} />}
+
       <Suspense fallback={<div>Loading...</div>}>
         <Search isOpen={isSearchModalOpen} onClose={closeSearchModal} />
       </Suspense>
